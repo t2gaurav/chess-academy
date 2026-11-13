@@ -134,7 +134,27 @@
     return { move: best, score: bestScore, depth: depthDone };
   }
 
-  const api = { bestMove, evaluate, MATE };
+  /* Friendly opponent for normal games: looks one move ahead (its move and your reply), then picks at
+     random among moves that are nearly as good, so it plays sensibly but is not relentless. */
+  function casualMove(pos, depth = 2, fuzz = 70) {
+    deadline = Date.now() + 5000;
+    nodes = 0;
+    const moves = legalMoves(pos);
+    if (!moves.length) return null;
+    let scored;
+    try {
+      scored = moves.map(m => [m, -search(make(pos, m), depth - 1, -INF, INF, 1)]);
+    } catch (e) {
+      if (e !== TIMEOUT) throw e;
+      return { move: moves[Math.floor(Math.random() * moves.length)], score: 0, depth: 0 };
+    }
+    const top = Math.max(...scored.map(s => s[1]));
+    const pool = scored.filter(s => s[1] >= top - fuzz);
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    return { move: pick[0], score: pick[1], depth };
+  }
+
+  const api = { bestMove, casualMove, evaluate, MATE };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.AI = api;
 })(typeof window !== 'undefined' ? window : this);

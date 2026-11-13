@@ -50,3 +50,19 @@ for (const lesson of LESSONS) for (const t of lesson.tasks) {
   assert(C.mateMoves(pos, t.n).some(m => m[0] === r.move[0] && m[1] === r.move[1]), lesson.id + ': plays a mating move');
 }
 console.log('computer finds every mate');
+
+// The friendly computer plays legal moves, takes a free queen, and finds a mate in one
+{
+  const win = C.parse('4k3/8/8/3q4/8/8/8/3RK3 w'); // the black queen on d5 is undefended and the rook can take it
+  let took = 0;
+  for (let i = 0; i < 30; i++) {
+    const r = AI.casualMove(win);
+    assert(C.legalMoves(win).some(m => m[0] === r.move[0] && m[1] === r.move[1]));
+    if (r.move[1] === 27) took++; // d5
+  }
+  assert(took >= 28, 'friendly computer should nearly always take a free queen, took ' + took);
+  const mate = C.parse('6k1/5ppp/8/8/8/8/8/R5K1 w');
+  const m = AI.casualMove(mate).move;
+  assert.strictEqual(C.status(C.make(mate, m)), 'checkmate');
+}
+console.log('friendly computer ok');

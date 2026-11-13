@@ -14,6 +14,7 @@
   let hintMove = null, hintShow = 0, hintCount = 0;
   let mode = 'lessons'; // 'lessons', 'game' (Checkmate mode), 'local' (two players) or 'online'
   let flipped = false;  // true when Black is at the bottom (the Black player online)
+  let level = 'hard';   // computer strength in 'game' mode: 'normal' (Play computer) or 'hard' (Checkmate mode)
 
   // Online play: 'idle' (not connected), 'waiting' (host waiting for a friend) or 'playing'
   const ONLINE_PREFIX = 'chessacademy-';
@@ -111,9 +112,13 @@
     }
     $('restartBtn').disabled = false;
     if (mode === 'game') {
-      $('lessonTitle').textContent = 'Checkmate mode (hard)';
-      $('teach').textContent = 'You play White. The computer plays Black and goes all out to checkmate you in as few moves as it can. ' +
-        'Look after your king and checkmate it first! Pawns promote to queens automatically. Games won: ' + (progress['game:wins'] || 0) + '.';
+      const wins = progress[level + ':wins'] || (level === 'hard' ? progress['game:wins'] : 0) || 0;
+      $('lessonTitle').textContent = level === 'hard' ? 'Checkmate mode (hard)' : 'Play the computer';
+      $('teach').textContent = level === 'hard'
+        ? 'You play White. The computer plays Black and goes all out to checkmate you in as few moves as it can. ' +
+          'Look after your king and checkmate it first! Pawns promote to queens automatically. Games won: ' + wins + '.'
+        : 'You play White. This computer plays sensibly but makes mistakes, so look for chances to win its pieces and then checkmate. ' +
+          'Ready for a real fight? Try Checkmate mode. Pawns promote to queens automatically. Games won: ' + wins + '.';
       $('taskCount').textContent = 'Full game';
       $('goal').textContent = 'Checkmate the black king.';
       $('moves').textContent = 'Your moves: ' + moves;
@@ -338,14 +343,14 @@
     const id = gameId;
     setTimeout(() => {
       if (id !== gameId || mode !== 'game') return;
-      const r = AI.bestMove(pos, 2000);
+      const r = level === 'hard' ? AI.bestMove(pos, 2000) : AI.casualMove(pos);
       pos = make(pos, r.move);
       last = r.move;
       locked = false;
       const st = status(pos);
       if (st === 'checkmate') return endGame('lose');
       if (st === 'stalemate' || bareKings(pos)) return endGame('draw');
-      const danger = r.score > AI.MATE - 100;
+      const danger = level === 'hard' && r.score > AI.MATE - 100;
       let text = st === 'check' ? 'Check! Move your king to safety, block, or capture the attacker.' : 'Your move.';
       if (danger) text += ' Careful, the computer can see a forced checkmate!';
       setMsg(text, st === 'check' || danger ? 'bad' : 'info');
@@ -357,7 +362,8 @@
     done = true;
     locked = false;
     if (result === 'win') {
-      progress['game:wins'] = (progress['game:wins'] || 0) + 1;
+      const wk = level + ':wins';
+      progress[wk] = (progress[wk] || (level === 'hard' ? progress['game:wins'] : 0) || 0) + 1;
       saveProgress();
       setMsg('♚ Checkmate! You beat the computer in ' + moves + ' moves. Brilliant!', 'good');
     } else if (result === 'lose') {
@@ -588,12 +594,14 @@
     setMsg('New game! Colours swapped: you are ' + colourName(myColor) + '.', 'info');
   }
 
-  function setMode(m) {
+  function setMode(m, lvl = 'hard') {
     if (mode === 'online' && m !== 'online') closeOnline();
     mode = m;
     flipped = false;
+    if (m === 'game') level = lvl;
     $('modeLessons').classList.toggle('active', m === 'lessons');
-    $('modeGame').classList.toggle('active', m === 'game');
+    $('modeGame').classList.toggle('active', m === 'game' && level === 'hard');
+    $('modeNormal').classList.toggle('active', m === 'game' && level === 'normal');
     $('modeLocal').classList.toggle('active', m === 'local');
     $('modeOnline').classList.toggle('active', m === 'online');
     document.querySelector('main').classList.toggle('game', m !== 'lessons');
@@ -632,7 +640,8 @@
   $('joinBtn').addEventListener('click', joinGame);
   $('codeInput').addEventListener('keydown', e => { if (e.key === 'Enter') joinGame(); });
   $('modeLessons').addEventListener('click', () => setMode('lessons'));
-  $('modeGame').addEventListener('click', () => setMode('game'));
+  $('modeGame').addEventListener('click', () => setMode('game', 'hard'));
+  $('modeNormal').addEventListener('click', () => setMode('game', 'normal'));
   $('modeLocal').addEventListener('click', () => setMode('local'));
   $('nextBtn').addEventListener('click', next);
   $('resetBtn').addEventListener('click', () => {

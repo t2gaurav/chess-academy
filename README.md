@@ -21,6 +21,12 @@ Double-click `index.html`. Progress (stars) is saved in the browser on that comp
 
 Each puzzle has a Hint (press twice to see the move), Undo and Restart. Wrong moves are explained and taken back.
 
+## Play computer (normal)
+
+A friendly opponent for ordinary games. It looks one move ahead and picks at random among moves that are
+nearly as good, so it plays sensibly (it will not leave a queen hanging) but makes mistakes a child can punish.
+Same board, Hint and Undo as Checkmate mode.
+
 ## Checkmate mode (hard)
 
 The "Checkmate mode" button starts a full game: he is White and the computer is Black. The computer searches
