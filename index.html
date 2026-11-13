@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#6c5ce7">
+  <title>Checkmate Academy</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1><span aria-hidden="true">&#9822;</span> Checkmate Academy</h1>
+    <div id="modes">
+      <button id="modeLessons" class="active">Lessons</button>
+      <button id="modeGame">Checkmate mode</button>
+      <button id="modeLocal">Two players</button>
+    </div>
+    <div id="stars" aria-live="polite"></div>
+  </header>
+
+  <main>
+    <nav id="lessons" aria-label="Lessons"></nav>
+
+    <section id="play">
+      <div id="board" role="grid" aria-label="Chess board"></div>
+    </section>
+
+    <aside id="coach">
+      <div id="coachInfo">
+        <h2 id="lessonTitle"></h2>
+        <p id="teach"></p>
+      </div>
+      <div id="coachActions">
+        <div class="goalbox">
+          <div id="taskCount"></div>
+          <div id="goal"></div>
+          <div id="moves"></div>
+        </div>
+        <div id="message" class="info" role="status" aria-live="polite"></div>
+        <div class="buttons">
+          <button id="hintBtn">Hint</button>
+          <button id="undoBtn">Undo</button>
+          <button id="restartBtn">Restart</button>
+          <button id="nextBtn" class="primary" hidden>Next</button>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer>
+    <button id="resetBtn" class="link">Reset progress</button>
+  </footer>
+
+  <script src="engine.js"></script>
+  <script src="ai.js"></script>
+  <script src="lessons.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

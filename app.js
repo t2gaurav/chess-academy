@@ -1,0 +1,425 @@
+(function () {
+  'use strict';
+
+  const { parse, legalMoves, make, status, inCheck, kingSquare, mateMoves, chooseDefence, squareName } = Chess;
+  const GLYPH = { K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞', P: '♟' };
+  const TEXT_STYLE = '︎';
+  const STORE_KEY = 'checkmateAcademy.v1';
+  const $ = id => document.getElementById(id);
+
+  let progress = loadProgress();
+  let li = 0, ti = 0, task, pos;
+  let sel = null, targets = [], last = null, history = [];
+  let locked = false, done = false, moves = 0;
+  let hintMove = null, hintShow = 0, hintCount = 0;
+  let mode = 'lessons'; // 'lessons' or 'game' (Checkmate mode)
+
+  function loadProgress() {
+    try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch (e) { return {}; }
+  }
+  function saveProgress() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(progress)); } catch (e) { /* private mode */ }
+  }
+  const key = (l, t) => LESSONS[l].id + ':' + t;
+  const lessonDone = l => LESSONS[l].tasks.every((_, t) => progress[key(l, t)]);
+  const firstOpenTask = l => {
+    const t = LESSONS[l].tasks.findIndex((_, i) => !progress[key(l, i)]);
+    return t < 0 ? 0 : t;
+  };
+
+  function loadTask() {
+    task = LESSONS[li].tasks[ti];
+    pos = parse(task.fen);
+    sel = null; targets = []; last = null; history = [];
+    locked = false; done = false; moves = 0;
+    clearHint(); hintCount = 0;
+    setMsg(task.type === 'practice' ? 'Take your time. Press Hint if you get stuck.' : 'Click a piece, then click where it should go.', 'info');
+    render();
+  }
+
+  function setMsg(text, kind) {
+    const el = $('message');
+    el.textContent = text;
+    el.className = kind || 'info';
+  }
+
+  function clearHint() { hintMove = null; hintShow = 0; }
+
+  /* ---------- rendering ---------- */
+
+  function render() {
+    renderNav();
+    renderCoach();
+    renderBoard();
+    renderStars();
+  }
+
+  function renderStars() {
+    const total = LESSONS.reduce((n, l) => n + l.tasks.length, 0);
+    const got = LESSONS.reduce((n, l, li2) => n + l.tasks.filter((_, t) => progress[key(li2, t)]).length, 0);
+    $('stars').textContent = '⭐ ' + got + ' / ' + total;
+  }
+
+  function renderNav() {
+    const nav = $('lessons');
+    nav.innerHTML = '';
+    LESSONS.forEach((lesson, l) => {
+      const b = document.createElement('button');
+      const n = lesson.tasks.filter((_, t) => progress[key(l, t)]).length;
+      b.className = (l === li ? 'active ' : '') + (lessonDone(l) ? 'complete' : '');
+      const label = document.createElement('span');
+      label.textContent = (l + 1) + '. ' + lesson.title;
+      const tick = document.createElement('span');
+      tick.className = 'tick';
+      tick.textContent = lessonDone(l) ? '✓' : n + '/' + lesson.tasks.length;
+      b.append(label, tick);
+      b.addEventListener('click', () => { li = l; ti = firstOpenTask(l); loadTask(); });
+      nav.append(b);
+    });
+  }
+
+  function goalText() {
+    if (task.type === 'check') return 'Give check to the black king.';
+    if (task.type === 'mate') return 'White to move. Checkmate in ' + task.n + '.';
+    return 'Checkmate the black king.';
+  }
+
+  function renderCoach() {
+    $('hintBtn').hidden = mode === 'local';
+    if (mode === 'game') {
+      $('lessonTitle').textContent = 'Checkmate mode (hard)';
+      $('teach').textContent = 'You play White. The computer plays Black and goes all out to checkmate you in as few moves as it can. ' +
+        'Look after your king and checkmate it first! Pawns promote to queens automatically. Games won: ' + (progress['game:wins'] || 0) + '.';
+      $('taskCount').textContent = 'Full game';
+      $('goal').textContent = 'Checkmate the black king.';
+      $('moves').textContent = 'Your moves: ' + moves;
+      $('nextBtn').hidden = true;
+      $('restartBtn').textContent = 'New game';
+      $('hintBtn').disabled = done || locked;
+      $('undoBtn').disabled = locked || !history.length;
+      return;
+    }
+    if (mode === 'local') {
+      $('lessonTitle').textContent = 'Two players';
+      $('teach').textContent = 'Play a friend on this screen. White is at the bottom and goes first, then pass the iPad. ' +
+        'Pawns promote to queens automatically.';
+      $('taskCount').textContent = 'Full game';
+      $('goal').textContent = done ? 'Game over' : (pos.turn === 'w' ? 'White to move' : 'Black to move');
+      $('moves').textContent = 'Moves played: ' + moves;
+      $('nextBtn').hidden = true;
+      $('restartBtn').textContent = 'New game';
+      $('undoBtn').disabled = !history.length;
+      return;
+    }
+    $('restartBtn').textContent = 'Restart';
+    const lesson = LESSONS[li];
+    $('lessonTitle').textContent = lesson.title;
+    $('teach').textContent = lesson.teach;
+    $('taskCount').textContent = 'Puzzle ' + (ti + 1) + ' of ' + lesson.tasks.length;
+    $('goal').textContent = goalText();
+    $('moves').textContent = task.type === 'practice' ? 'Moves so far: ' + moves : '';
+    $('nextBtn').hidden = !done;
+    $('hintBtn').disabled = done || locked;
+    $('undoBtn').disabled = done || locked || !history.length;
+  }
+
+  function renderBoard() {
+    const el = $('board');
+    el.innerHTML = '';
+    const checkSq = inCheck(pos) ? kingSquare(pos.b, pos.turn) : -1;
+    for (let i = 0; i < 64; i++) {
+      const r = i >> 3, c = i & 7;
+      const p = pos.b[i];
+      const sq = document.createElement('button');
+      sq.className = 'sq ' + ((r + c) % 2 ? 'dark' : 'light');
+      if (last && (last[0] === i || last[1] === i)) sq.classList.add('last');
+      if (i === sel) sq.classList.add('sel');
+      if (targets.includes(i)) sq.classList.add('target', ...(p ? ['cap'] : []));
+      if (i === checkSq) sq.classList.add('check');
+      if (hintMove && ((hintShow >= 1 && i === hintMove[0]) || (hintShow >= 2 && i === hintMove[1]))) sq.classList.add('hint');
+      sq.setAttribute('aria-label', squareName(i) + (p ? ' ' + (p === p.toUpperCase() ? 'white ' : 'black ') + p.toUpperCase() : ''));
+      if (c === 0) sq.insertAdjacentHTML('beforeend', '<span class="coord rank">' + (8 - r) + '</span>');
+      if (r === 7) sq.insertAdjacentHTML('beforeend', '<span class="coord file">' + 'abcdefgh'[c] + '</span>');
+      if (p) {
+        const span = document.createElement('span');
+        span.className = 'piece ' + (p === p.toUpperCase() ? 'w' : 'b');
+        span.textContent = GLYPH[p.toUpperCase()] + TEXT_STYLE;
+        sq.append(span);
+      }
+      sq.addEventListener('click', () => onSquare(i));
+      el.append(sq);
+    }
+  }
+
+  /* ---------- playing ---------- */
+
+  function onSquare(i) {
+    if (locked || done) return;
+    if (sel !== null && targets.includes(i)) { tryMove(sel, i); return; }
+    const p = pos.b[i];
+    if (p && Chess.colorOf(p) === (mode === 'local' ? pos.turn : 'w')) {
+      sel = i;
+      targets = legalMoves(pos).filter(m => m[0] === i).map(m => m[1]);
+    } else {
+      sel = null; targets = [];
+    }
+    renderBoard();
+  }
+
+  const whiteMaterial = p => p.b.filter(x => x && x !== 'K' && x === x.toUpperCase()).length;
+
+  function tryMove(from, to) {
+    if (mode === 'game') return gameMove(from, to);
+    if (mode === 'local') return localMove(from, to);
+    const before = pos;
+    history.push({ pos: before, last, moves });
+    pos = make(before, [from, to]);
+    last = [from, to];
+    sel = null; targets = [];
+    moves++;
+    clearHint();
+    const st = status(pos);
+
+    if (st === 'checkmate') return win();
+    if (task.type === 'check') {
+      if (st === 'check') return win();
+      return reject('That move does not attack the black king. Look for a piece that can see him.');
+    }
+    if (st === 'stalemate') {
+      return reject('Stalemate! Black has no moves but is not in check, so it is a draw. Let us take that back.');
+    }
+    if (task.type === 'mate') {
+      const left = task.n - (moves - 1);
+      const forcing = mateMoves(before, left).some(m => m[0] === from && m[1] === to);
+      if (!forcing) {
+        return reject('Good try, but the black king can still escape. Look for a move that leaves him nowhere to go.');
+      }
+    }
+    // Black replies
+    locked = true;
+    setMsg('Black is thinking...', 'info');
+    render();
+    setTimeout(() => reply(), 600);
+  }
+
+  function reply() {
+    const m = chooseDefence(pos);
+    const had = whiteMaterial(pos);
+    pos = make(pos, m);
+    last = m;
+    locked = false;
+    if (whiteMaterial(pos) < had) {
+      setMsg('Oh no, Black captured one of your pieces! Press Undo to take your move back.', 'bad');
+    } else if (task.type === 'mate') {
+      setMsg('Black had to move there. Now finish it with checkmate!', 'info');
+    } else {
+      setMsg('Black moved. Your turn.', 'info');
+    }
+    render();
+  }
+
+  function reject(text) {
+    locked = true;
+    setMsg(text, 'bad');
+    render();
+    const t = task;
+    setTimeout(() => { if (mode === 'lessons' && task === t) { locked = false; popHistory(); render(); } }, 1400);
+  }
+
+  function popHistory() {
+    const h = history.pop();
+    if (!h) return;
+    pos = h.pos; last = h.last; moves = h.moves;
+    sel = null; targets = []; clearHint();
+  }
+
+  function win() {
+    done = true;
+    locked = false;
+    progress[key(li, ti)] = true;
+    saveProgress();
+    const mated = status(pos) === 'checkmate';
+    setMsg((mated ? '♚ Checkmate! ' : 'Check! ') + (task.explain || 'Well done!'), 'good');
+    render();
+  }
+
+  /* ---------- hints ---------- */
+
+  function findHintMove() {
+    if (task.type === 'check') {
+      return legalMoves(pos).find(m => ['check', 'checkmate'].includes(status(make(pos, m)))) || null;
+    }
+    if (task.type === 'mate') {
+      return mateMoves(pos, task.n - moves)[0] || null;
+    }
+    return mateMoves(pos, 1)[0] || mateMoves(pos, 2)[0] || null;
+  }
+
+  function hint() {
+    if (done || locked) return;
+    if (mode === 'game' && !hintMove) {
+      const r = AI.bestMove(pos, 1200);
+      hintMove = r && r.move;
+    }
+    if (!hintMove) hintMove = findHintMove();
+    if (hintMove) {
+      hintShow = Math.min(hintShow + 1, 2);
+      sel = null; targets = [];
+      setMsg(hintShow === 1 ? (task.hint || 'Look at the glowing piece.') + ' (The glowing piece is the one to move. Press Hint again to see where.)' : 'Move the glowing piece to the other glowing square.', 'info');
+    } else {
+      const tips = task.tips || [task.hint || 'Think about which squares the king can still use.'];
+      setMsg(tips[hintCount % tips.length], 'info');
+      hintCount++;
+    }
+    renderBoard();
+  }
+
+  /* ---------- Checkmate mode: a full game against the computer ---------- */
+
+  let gameId = 0; // lets a stale computer reply be ignored after New game or a mode switch
+
+  function newGame() {
+    gameId++;
+    pos = parse(Chess.START_FEN);
+    sel = null; targets = []; last = null; history = [];
+    locked = false; done = false; moves = 0;
+    clearHint(); hintCount = 0;
+    setMsg('You are White. Your move.', 'info');
+    render();
+  }
+
+  const bareKings = p => p.b.every(x => !x || x.toUpperCase() === 'K');
+
+  function gameMove(from, to) {
+    history.push({ pos, last, moves });
+    pos = make(pos, [from, to]);
+    last = [from, to];
+    sel = null; targets = [];
+    moves++;
+    clearHint();
+    const st = status(pos);
+    if (st === 'checkmate') return endGame('win');
+    if (st === 'stalemate' || bareKings(pos)) return endGame('draw');
+    computerTurn();
+  }
+
+  function computerTurn() {
+    locked = true;
+    setMsg('The computer is thinking...', 'info');
+    render();
+    const id = gameId;
+    setTimeout(() => {
+      if (id !== gameId || mode !== 'game') return;
+      const r = AI.bestMove(pos, 2000);
+      pos = make(pos, r.move);
+      last = r.move;
+      locked = false;
+      const st = status(pos);
+      if (st === 'checkmate') return endGame('lose');
+      if (st === 'stalemate' || bareKings(pos)) return endGame('draw');
+      const danger = r.score > AI.MATE - 100;
+      let text = st === 'check' ? 'Check! Move your king to safety, block, or capture the attacker.' : 'Your move.';
+      if (danger) text += ' Careful, the computer can see a forced checkmate!';
+      setMsg(text, st === 'check' || danger ? 'bad' : 'info');
+      render();
+    }, 60);
+  }
+
+  function endGame(result) {
+    done = true;
+    locked = false;
+    if (result === 'win') {
+      progress['game:wins'] = (progress['game:wins'] || 0) + 1;
+      saveProgress();
+      setMsg('♚ Checkmate! You beat the computer in ' + moves + ' moves. Brilliant!', 'good');
+    } else if (result === 'lose') {
+      setMsg('The computer checkmated you on move ' + moves + '. Press Undo to try a different move, or New game.', 'bad');
+    } else {
+      setMsg('It is a draw. Press Undo to try a different move, or New game.', 'info');
+    }
+    render();
+  }
+
+  /* ---------- Two players on one screen ---------- */
+
+  function newLocal() {
+    pos = parse(Chess.START_FEN);
+    sel = null; targets = []; last = null; history = [];
+    locked = false; done = false; moves = 0;
+    clearHint();
+    setMsg('White to move. Click a piece, then click where it should go.', 'info');
+    render();
+  }
+
+  function localMove(from, to) {
+    history.push({ pos, last, moves });
+    const mover = pos.turn === 'w' ? 'White' : 'Black';
+    pos = make(pos, [from, to]);
+    last = [from, to];
+    sel = null; targets = [];
+    moves++;
+    const st = status(pos);
+    if (st === 'checkmate') {
+      done = true;
+      setMsg('♚ Checkmate! ' + mover + ' wins in ' + moves + ' moves. Well played both!', 'good');
+    } else if (st === 'stalemate' || bareKings(pos)) {
+      done = true;
+      setMsg('It is a draw. Well played both! Press Undo to take back the last move, or New game.', 'info');
+    } else {
+      const next = pos.turn === 'w' ? 'White' : 'Black';
+      setMsg((st === 'check' ? 'Check! ' : '') + next + ' to move.', st === 'check' ? 'bad' : 'info');
+    }
+    render();
+  }
+
+  function setMode(m) {
+    mode = m;
+    $('modeLessons').classList.toggle('active', m === 'lessons');
+    $('modeGame').classList.toggle('active', m === 'game');
+    $('modeLocal').classList.toggle('active', m === 'local');
+    document.querySelector('main').classList.toggle('game', m !== 'lessons');
+    gameId++;
+    if (m === 'game') newGame();
+    else if (m === 'local') newLocal();
+    else loadTask();
+  }
+
+  /* ---------- navigation ---------- */
+
+  function next() {
+    if (ti + 1 < LESSONS[li].tasks.length) ti++;
+    else if (li + 1 < LESSONS.length) { li++; ti = firstOpenTask(li); }
+    else {
+      loadTask();
+      setMsg('You finished every lesson. Amazing! Pick any lesson to practise again.', 'good');
+      return;
+    }
+    loadTask();
+  }
+
+  $('hintBtn').addEventListener('click', hint);
+  $('undoBtn').addEventListener('click', () => {
+    if (locked || (done && mode === 'lessons')) return;
+    popHistory();
+    done = false;
+    setMsg('Move taken back. Try a different one.', 'info');
+    render();
+  });
+  $('restartBtn').addEventListener('click', () => (mode === 'game' ? newGame() : mode === 'local' ? newLocal() : loadTask()));
+  $('modeLessons').addEventListener('click', () => setMode('lessons'));
+  $('modeGame').addEventListener('click', () => setMode('game'));
+  $('modeLocal').addEventListener('click', () => setMode('local'));
+  $('nextBtn').addEventListener('click', next);
+  $('resetBtn').addEventListener('click', () => {
+    if (confirm('Clear all stars and start from the beginning?')) {
+      progress = {}; saveProgress(); li = 0; ti = 0; loadTask();
+    }
+  });
+
+  // Start on the first lesson that is not finished yet
+  // (the first two lessons are a warm-up, so a fresh start begins at lesson 3)
+  const started = LESSONS.some((l, l2) => l.tasks.some((_, t) => progress[key(l2, t)]));
+  li = started ? Math.max(0, LESSONS.findIndex((_, l) => !lessonDone(l))) : 2;
+  ti = firstOpenTask(li);
+  loadTask();
+})();
