@@ -15,6 +15,7 @@
       <button id="modeLessons" class="active">Lessons</button>
       <button id="modeGame">Checkmate mode</button>
       <button id="modeLocal">Two players</button>
+      <button id="modeOnline">Play online</button>
     </div>
     <div id="stars" aria-live="polite"></div>
   </header>
@@ -32,6 +33,20 @@
         <p id="teach"></p>
       </div>
       <div id="coachActions">
+        <div id="lobby" hidden>
+          <div id="lobbyChoices">
+            <button id="createBtn" class="primary">Create a game</button>
+            <div class="join">
+              <input id="codeInput" maxlength="4" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="CODE" aria-label="Game code">
+              <button id="joinBtn">Join</button>
+            </div>
+          </div>
+          <div id="codeShow" hidden>
+            Your game code
+            <div id="code"></div>
+            <small>Tell your friend to tap Play online, type this code and tap Join.</small>
+          </div>
+        </div>
         <div class="goalbox">
           <div id="taskCount"></div>
           <div id="goal"></div>
@@ -53,6 +68,7 @@
   </footer>
 
   <script src="engine.js"></script>
+  <script src="vendor/peerjs.min.js"></script>
   <script src="ai.js"></script>
   <script src="lessons.js"></script>
   <script src="app.js"></script>

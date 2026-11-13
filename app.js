@@ -12,7 +12,13 @@
   let sel = null, targets = [], last = null, history = [];
   let locked = false, done = false, moves = 0;
   let hintMove = null, hintShow = 0, hintCount = 0;
-  let mode = 'lessons'; // 'lessons' or 'game' (Checkmate mode)
+  let mode = 'lessons'; // 'lessons', 'game' (Checkmate mode), 'local' (two players) or 'online'
+  let flipped = false;  // true when Black is at the bottom (the Black player online)
+
+  // Online play: 'idle' (not connected), 'waiting' (host waiting for a friend) or 'playing'
+  const ONLINE_PREFIX = 'chessacademy-';
+  const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O, which look like 1 and 0
+  let peer = null, conn = null, online = 'idle', myColor = 'w';
 
   function loadProgress() {
     try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch (e) { return {}; }
@@ -85,7 +91,25 @@
   }
 
   function renderCoach() {
-    $('hintBtn').hidden = mode === 'local';
+    $('hintBtn').hidden = mode === 'local' || mode === 'online';
+    $('lobby').hidden = mode !== 'online' || online === 'playing';
+    $('lobbyChoices').hidden = online === 'waiting';
+    $('codeShow').hidden = online !== 'waiting';
+    if (mode === 'online') {
+      const playing = online === 'playing';
+      $('lessonTitle').textContent = 'Play online';
+      $('teach').textContent = 'Play a friend on their own iPad. One of you creates a game and shares the 4-letter code, and the other joins with it. ' +
+        'Whoever creates the game plays White first. Pawns promote to queens automatically.';
+      $('taskCount').textContent = playing ? 'You are ' + (myColor === 'w' ? 'White' : 'Black') : 'Not connected';
+      $('goal').textContent = !playing ? 'Create or join a game' : done ? 'Game over' : pos.turn === myColor ? 'Your move' : 'Waiting for your friend';
+      $('moves').textContent = playing ? 'Moves played: ' + Math.ceil(moves / 2) : '';
+      $('nextBtn').hidden = true;
+      $('restartBtn').textContent = 'New game';
+      $('restartBtn').disabled = !playing;
+      $('undoBtn').disabled = true;
+      return;
+    }
+    $('restartBtn').disabled = false;
     if (mode === 'game') {
       $('lessonTitle').textContent = 'Checkmate mode (hard)';
       $('teach').textContent = 'You play White. The computer plays Black and goes all out to checkmate you in as few moves as it can. ' +
@@ -105,7 +129,7 @@
         'Pawns promote to queens automatically.';
       $('taskCount').textContent = 'Full game';
       $('goal').textContent = done ? 'Game over' : (pos.turn === 'w' ? 'White to move' : 'Black to move');
-      $('moves').textContent = 'Moves played: ' + moves;
+      $('moves').textContent = 'Moves played: ' + Math.ceil(moves / 2);
       $('nextBtn').hidden = true;
       $('restartBtn').textContent = 'New game';
       $('undoBtn').disabled = !history.length;
@@ -127,7 +151,8 @@
     const el = $('board');
     el.innerHTML = '';
     const checkSq = inCheck(pos) ? kingSquare(pos.b, pos.turn) : -1;
-    for (let i = 0; i < 64; i++) {
+    for (let k = 0; k < 64; k++) {
+      const i = flipped ? 63 - k : k;
       const r = i >> 3, c = i & 7;
       const p = pos.b[i];
       const sq = document.createElement('button');
@@ -138,8 +163,8 @@
       if (i === checkSq) sq.classList.add('check');
       if (hintMove && ((hintShow >= 1 && i === hintMove[0]) || (hintShow >= 2 && i === hintMove[1]))) sq.classList.add('hint');
       sq.setAttribute('aria-label', squareName(i) + (p ? ' ' + (p === p.toUpperCase() ? 'white ' : 'black ') + p.toUpperCase() : ''));
-      if (c === 0) sq.insertAdjacentHTML('beforeend', '<span class="coord rank">' + (8 - r) + '</span>');
-      if (r === 7) sq.insertAdjacentHTML('beforeend', '<span class="coord file">' + 'abcdefgh'[c] + '</span>');
+      if ((k & 7) === 0) sq.insertAdjacentHTML('beforeend', '<span class="coord rank">' + (8 - r) + '</span>');
+      if (k >> 3 === 7) sq.insertAdjacentHTML('beforeend', '<span class="coord file">' + 'abcdefgh'[c] + '</span>');
       if (p) {
         const span = document.createElement('span');
         span.className = 'piece ' + (p === p.toUpperCase() ? 'w' : 'b');
@@ -155,9 +180,11 @@
 
   function onSquare(i) {
     if (locked || done) return;
+    if (mode === 'online' && (online !== 'playing' || pos.turn !== myColor)) return;
     if (sel !== null && targets.includes(i)) { tryMove(sel, i); return; }
     const p = pos.b[i];
-    if (p && Chess.colorOf(p) === (mode === 'local' ? pos.turn : 'w')) {
+    const mine = mode === 'local' ? pos.turn : mode === 'online' ? myColor : 'w';
+    if (p && Chess.colorOf(p) === mine) {
       sel = i;
       targets = legalMoves(pos).filter(m => m[0] === i).map(m => m[1]);
     } else {
@@ -171,6 +198,7 @@
   function tryMove(from, to) {
     if (mode === 'game') return gameMove(from, to);
     if (mode === 'local') return localMove(from, to);
+    if (mode === 'online') return onlineMove(from, to);
     const before = pos;
     history.push({ pos: before, last, moves });
     pos = make(before, [from, to]);
@@ -361,7 +389,7 @@
     const st = status(pos);
     if (st === 'checkmate') {
       done = true;
-      setMsg('♚ Checkmate! ' + mover + ' wins in ' + moves + ' moves. Well played both!', 'good');
+      setMsg('♚ Checkmate! ' + mover + ' wins in ' + Math.ceil(moves / 2) + ' moves. Well played both!', 'good');
     } else if (st === 'stalemate' || bareKings(pos)) {
       done = true;
       setMsg('It is a draw. Well played both! Press Undo to take back the last move, or New game.', 'info');
@@ -372,15 +400,207 @@
     render();
   }
 
+  /* ---------- Online: two iPads, one move at a time, through PeerJS ---------- */
+
+  const PeerLib = () => window.Peer || (window.peerjs && window.peerjs.Peer);
+  const colourName = c => (c === 'w' ? 'White' : 'Black');
+
+  // Heartbeat: a closed tab or a lost connection does not always say goodbye
+  let beat = null, lastSeen = 0, quiet = false;
+
+  function startBeat() {
+    stopBeat();
+    lastSeen = Date.now(); quiet = false;
+    beat = setInterval(() => {
+      sendToFriend({ t: 'ping' });
+      if (!quiet && online === 'playing' && Date.now() - lastSeen > 20000) {
+        quiet = true;
+        setMsg('Your friend seems to have gone quiet. Waiting for them...', 'bad');
+      }
+    }, 4000);
+  }
+
+  function stopBeat() {
+    if (beat) clearInterval(beat);
+    beat = null;
+  }
+
+  function closeOnline() {
+    stopBeat();
+    const p = peer, c = conn;
+    peer = null; conn = null; online = 'idle';
+    try { if (c) c.close(); } catch (e) { /* already closed */ }
+    try { if (p) p.destroy(); } catch (e) { /* already closed */ }
+  }
+
+  function startOnline() {
+    closeOnline();
+    flipped = false;
+    pos = parse(Chess.START_FEN);
+    sel = null; targets = []; last = null; history = [];
+    locked = false; done = false; moves = 0;
+    setMsg('Tap Create a game and share the code, or type your friend\'s code and tap Join.', 'info');
+    render();
+  }
+
+  function onlineProblem(err) {
+    const type = err && err.type;
+    closeOnline();
+    if (type === 'peer-unavailable') setMsg('There is no game with that code. Check the code and try again.', 'bad');
+    else if (type === 'network' || type === 'server-error' || type === 'socket-error' || type === 'socket-closed') {
+      setMsg('Could not reach the online service. Check the internet connection and try again.', 'bad');
+    } else setMsg('Something went wrong with the connection. Please try again.', 'bad');
+    render();
+  }
+
+  function adopt(c) {
+    conn = c;
+    startBeat();
+    c.on('data', onOnlineData);
+    c.on('close', () => { if (conn === c) onFriendLeft(); });
+    c.on('error', () => { if (conn === c) onFriendLeft(); });
+  }
+
+  function onFriendLeft() {
+    if (mode !== 'online') return;
+    closeOnline();
+    done = true;
+    setMsg('Your friend has left the game. Create or join another one.', 'bad');
+    render();
+  }
+
+  function createGame(tries = 0) {
+    const Lib = PeerLib();
+    if (!Lib) { setMsg('Online play could not load. Check the internet connection and reload the page.', 'bad'); return; }
+    closeOnline();
+    let code = '';
+    for (let i = 0; i < 4; i++) code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+    setMsg('Setting up your game...', 'info');
+    const p = new Lib(ONLINE_PREFIX + code);
+    peer = p;
+    p.on('open', () => {
+      if (peer !== p) return;
+      online = 'waiting';
+      $('code').textContent = code;
+      setMsg('Share the code with your friend. Waiting for them to join...', 'info');
+      render();
+    });
+    p.on('connection', c => {
+      if (peer !== p || conn) { c.close(); return; }
+      adopt(c);
+      if (c.open) beginOnlineGame('w'); else c.on('open', () => { if (conn === c) beginOnlineGame('w'); });
+    });
+    p.on('error', err => {
+      if (peer !== p) return;
+      if (err && err.type === 'unavailable-id' && tries < 5) createGame(tries + 1);
+      else onlineProblem(err);
+    });
+  }
+
+  function joinGame() {
+    const Lib = PeerLib();
+    if (!Lib) { setMsg('Online play could not load. Check the internet connection and reload the page.', 'bad'); return; }
+    const code = $('codeInput').value.trim().toUpperCase();
+    if (!/^[A-Z]{4}$/.test(code)) { setMsg('Type the 4 letters of your friend\'s code, then tap Join.', 'bad'); return; }
+    closeOnline();
+    setMsg('Joining...', 'info');
+    const p = new Lib();
+    peer = p;
+    p.on('open', () => {
+      if (peer !== p) return;
+      const c = p.connect(ONLINE_PREFIX + code, { reliable: true });
+      adopt(c);
+      c.on('open', () => { if (conn === c) beginOnlineGame('b'); });
+    });
+    p.on('error', err => { if (peer === p) onlineProblem(err); });
+  }
+
+  function beginOnlineGame(color) {
+    online = 'playing';
+    myColor = color;
+    flipped = color === 'b';
+    pos = parse(Chess.START_FEN);
+    sel = null; targets = []; last = null; history = [];
+    locked = false; done = false; moves = 0;
+    setMsg('You are ' + colourName(color) + '. ' + (color === 'w' ? 'You move first!' : 'White moves first.'), 'info');
+    render();
+  }
+
+  function sendToFriend(data) {
+    try { if (conn && conn.open) conn.send(data); } catch (e) { onFriendLeft(); }
+  }
+
+  function afterOnlineMove(mover) {
+    const st = status(pos);
+    if (st === 'checkmate') {
+      done = true;
+      setMsg(mover === myColor
+        ? '♚ Checkmate! You win in ' + Math.ceil(moves / 2) + ' moves. Brilliant!'
+        : 'Checkmate. Your friend wins this time. Press New game for a rematch.', mover === myColor ? 'good' : 'bad');
+    } else if (st === 'stalemate' || bareKings(pos)) {
+      done = true;
+      setMsg('It is a draw. Well played both! Press New game for a rematch.', 'info');
+    } else if (pos.turn === myColor) {
+      setMsg((st === 'check' ? 'Check! ' : '') + 'Your move.', st === 'check' ? 'bad' : 'info');
+    } else {
+      setMsg('Waiting for your friend to move...', 'info');
+    }
+    render();
+  }
+
+  function onlineMove(from, to) {
+    pos = make(pos, [from, to]);
+    last = [from, to];
+    sel = null; targets = [];
+    moves++;
+    sendToFriend({ t: 'move', from, to });
+    afterOnlineMove(myColor);
+  }
+
+  function onOnlineData(d) {
+    if (mode !== 'online' || online !== 'playing' || !d || typeof d !== 'object') return;
+    lastSeen = Date.now();
+    if (quiet) {
+      quiet = false;
+      setMsg('Your friend is back!', 'info');
+      render();
+    }
+    if (d.t === 'move') {
+      if (done || pos.turn === myColor) return;
+      const ok = Number.isInteger(d.from) && Number.isInteger(d.to) &&
+        legalMoves(pos).some(m => m[0] === d.from && m[1] === d.to);
+      if (!ok) return; // ignore anything that is not a legal move
+      pos = make(pos, [d.from, d.to]);
+      last = [d.from, d.to];
+      sel = null; targets = [];
+      moves++;
+      afterOnlineMove(myColor === 'w' ? 'b' : 'w');
+    } else if (d.t === 'new') {
+      beginOnlineGame(myColor === 'w' ? 'b' : 'w');
+      setMsg('New game! Colours swapped: you are ' + colourName(myColor) + '.', 'info');
+    }
+  }
+
+  function newOnlineGame() {
+    if (online !== 'playing') return;
+    sendToFriend({ t: 'new' });
+    beginOnlineGame(myColor === 'w' ? 'b' : 'w');
+    setMsg('New game! Colours swapped: you are ' + colourName(myColor) + '.', 'info');
+  }
+
   function setMode(m) {
+    if (mode === 'online' && m !== 'online') closeOnline();
     mode = m;
+    flipped = false;
     $('modeLessons').classList.toggle('active', m === 'lessons');
     $('modeGame').classList.toggle('active', m === 'game');
     $('modeLocal').classList.toggle('active', m === 'local');
+    $('modeOnline').classList.toggle('active', m === 'online');
     document.querySelector('main').classList.toggle('game', m !== 'lessons');
     gameId++;
     if (m === 'game') newGame();
     else if (m === 'local') newLocal();
+    else if (m === 'online') startOnline();
     else loadTask();
   }
 
@@ -405,7 +625,12 @@
     setMsg('Move taken back. Try a different one.', 'info');
     render();
   });
-  $('restartBtn').addEventListener('click', () => (mode === 'game' ? newGame() : mode === 'local' ? newLocal() : loadTask()));
+  $('restartBtn').addEventListener('click', () => (mode === 'game' ? newGame() : mode === 'local' ? newLocal() : mode === 'online' ? newOnlineGame() : loadTask()));
+  $('modeOnline').addEventListener('click', () => setMode('online'));
+  window.addEventListener('pagehide', closeOnline); // tell the friend straight away when the page closes
+  $('createBtn').addEventListener('click', () => createGame());
+  $('joinBtn').addEventListener('click', joinGame);
+  $('codeInput').addEventListener('keydown', e => { if (e.key === 'Enter') joinGame(); });
   $('modeLessons').addEventListener('click', () => setMode('lessons'));
   $('modeGame').addEventListener('click', () => setMode('game'));
   $('modeLocal').addEventListener('click', () => setMode('local'));

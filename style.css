@@ -161,6 +161,38 @@ main {
 #teach { margin: 0 0 12px; line-height: 1.45; color: var(--muted); }
 
 .goalbox { background: #f1effc; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+#lobby { margin-bottom: 12px; }
+#lobbyChoices { display: flex; flex-direction: column; gap: 10px; }
+#lobby .join { display: flex; gap: 8px; }
+#lobby button {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: #e6e2ff;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+#lobby button.primary { background: var(--accent); color: #fff; }
+#codeInput {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 2px solid #cfc9f5;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 1.4rem; /* 16px or more stops iPad Safari zooming in on the field */
+  letter-spacing: .3em;
+  text-align: center;
+  text-transform: uppercase;
+}
+#codeShow { text-align: center; padding: 10px; border-radius: 10px; background: #fff7d6; }
+#code { font-size: 2.2rem; font-weight: 800; letter-spacing: .35em; padding-left: .35em; }
+#codeShow small { color: var(--muted); }
+
 #taskCount { font-size: .85rem; color: var(--muted); }
 #goal { font-weight: 700; font-size: 1.1rem; margin-top: 2px; }
 #moves { font-size: .9rem; color: var(--muted); margin-top: 2px; }

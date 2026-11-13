@@ -29,8 +29,19 @@ see a forced mate it plays the quickest one. It warns him when it sees one. Hint
 suggested move for him, and Undo takes back his move and its reply. Pawns promote to queens automatically.
 Draws are by stalemate or bare kings only (no repetition or 50-move rule).
 
+## Two players and online play
+
+- **Two players**: two people share one screen, White at the bottom, passing the iPad.
+- **Play online**: one player taps Create a game and gets a 4-letter code. The other types it and taps Join.
+  The creator plays White, and New game swaps colours. Moves go straight between the two devices using
+  [PeerJS](https://peerjs.com) (WebRTC). PeerJS's free public broker (`0.peerjs.com`) only introduces the two
+  devices; the game codes and the devices' network addresses pass through it, and no accounts are needed.
+  Every move a friend sends is checked against the chess rules before it is played. If a friend goes quiet for
+  20 seconds the game says so and waits; it does not end the game.
+
 ## Files
 
+- `vendor/peerjs.min.js`: PeerJS 1.5.4 (MIT licence, see `vendor/peerjs-LICENSE.txt`), copied from npm so the app does not load anything from a CDN.
 - `engine.js`: the rules, including castling and en passant, plus check, checkmate, stalemate and a mate finder.
 - `ai.js`: the computer player for Checkmate mode.
 - `lessons.js`: the lessons and puzzle positions (FEN). Add more here.
